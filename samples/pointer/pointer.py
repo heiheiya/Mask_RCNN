@@ -12,19 +12,19 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
        the command line as such:
 
     # Train a new model starting from pre-trained COCO weights
-    python3 lights.py train --dataset=/path/to/lights/dataset --weights=coco
+    python3 pointer.py train --dataset=/path/to/pointer/dataset --weights=coco
 
     # Resume training a model that you had trained earlier
-    python3 lights.py train --dataset=/path/to/lights/dataset --weights=last
+    python3 pointer.py train --dataset=/path/to/pointer/dataset --weights=last
 
     # Train a new model starting from ImageNet weights
-    python3 lights.py train --dataset=/path/to/lights/dataset --weights=imagenet
+    python3 pointer.py train --dataset=/path/to/pointer/dataset --weights=imagenet
 
     # Apply color splash to an image
-    python3 lights.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    python3 pointer.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
     # Apply color splash to video using the last weights you trained
-    python3 lights.py splash --weights=last --video=<URL or path to file>
+    python3 pointer.py splash --weights=last --video=<URL or path to file>
 """
 
 import os
@@ -47,57 +47,49 @@ COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 
 # Directory to save logs and model checkpoints, if not provided
 # through the command line argument --logs
-DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "lights_logs")
+DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "pointer_logs")
 
 ############################################################
 #  Configurations
 ############################################################
 
 
-class LightsConfig(Config):
+class PointerConfig(Config):
     """Configuration for training on the toy  dataset.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "lights"
+    NAME = "pointer"
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
     IMAGES_PER_GPU = 1
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 17  # Background + lights
+    NUM_CLASSES = 1 + 1  # Background + lights
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 500
+    STEPS_PER_EPOCH = 200
 
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     
-    #IMAGE_MIN_DIM = 1080
-    #IMAGE_MAX_DIM = 1920
     
-    BACKBONE = "resnet101"
-
+    BACKBONE = "resnet50"
 
 ############################################################
 #  Dataset
 ############################################################
 
-class LightsDataset(utils.Dataset):
+class PointerDataset(utils.Dataset):
 
-    def load_lights(self, dataset_dir, subset):
-        """Load a subset of the Lights dataset.
+    def load_pointer(self, dataset_dir, subset):
+        """Load a subset of the Pointer dataset.
         dataset_dir: Root directory of the dataset.
         subset: Subset to load: train or val
         """
-        # Add classes. We have only one class to add.
-        classes = ["oilgaugeu", "light-1-on", "light-1-off", "light-2-on","light-2-off","light-3-on",
-        "light-3-off", "light-4-on", "light-4-off", "switch-on", "switch-off", "instrument-1",
-        "instrument-2", "light-5-on", "light-5-off", "light-6-on", "light-6-off"]
-        
-        for i, c in enumerate(classes, start=1):
-            self.add_class("lights", i, c)
+        # Add classes. We have only one class to add. 
+        self.add_class("pointer", 1, "pointer")
 
         # Train or validation dataset?
         assert subset in ["train", "val"]
@@ -130,12 +122,10 @@ class LightsDataset(utils.Dataset):
             # Get the x, y coordinaets of points of the rects that make up
             # the outline of each object instance. There are stores in the
             # shape_attributes (see json format above)
-            shapes = [r['shape_attributes'] for r in a['regions']]
+            polylines = [r['shape_attributes'] for r in a['regions']]
 
             name = [r['region_attributes']['name'] for r in a['regions']]
-            name_dict = {"oilgaugeu":1, "light-1-on":2, "light-1-off":3, "light-2-on":4,"light-2-off":5,"light-3-on":6,
-        "light-3-off":7, "light-4-on":8, "light-4-off":9, "switch-on":10, "switch-off":11, "instrument-1":12,
-        "instrument-2":13, "light-5-on":14, "light-5-off":15, "light-6-on":16, "light-6-off":17}
+            name_dict = {"pointer":1}
             name_id = [name_dict[a] for a in name]
 
             # load_mask() needs the image size to convert rects to masks.
@@ -146,12 +136,12 @@ class LightsDataset(utils.Dataset):
             height, width = image.shape[:2]
 
             self.add_image(
-                "lights",
+                "pointer",
                 image_id=a['filename'],  # use file name as a unique image id
                 path=image_path,
                 class_id=name_id,
                 width=width, height=height,
-                polygons=shapes)
+                polygons=polylines)
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -162,7 +152,7 @@ class LightsDataset(utils.Dataset):
         """
         # If not a balloon dataset image, delegate to parent class.
         image_info = self.image_info[image_id]
-        if image_info["source"] != "lights":
+        if image_info["source"] != "pointer":
             return super(self.__class__, self).load_mask(image_id)
         
         name_id = image_info["class_id"]
@@ -176,17 +166,8 @@ class LightsDataset(utils.Dataset):
         class_ids = np.array(name_id, dtype=np.int32)
         
         for i, p in enumerate(info["polygons"]):
-            if p['name'] == 'circle':
-                rr, cc = skimage.draw.circle(p['cy'], p['cx'], p['r'])
-                mask[rr, cc, i] = 1
-            elif p['name'] == 'rect':
-                rr, cc = skimage.draw.rectangle((p['y'], p['x']), extent=(p['height'], p['width']))
-                mask[rr, cc, i] = 1
-            elif p['name'] == 'polygon':
-                rr, cc = skimage.draw.polygon(p['all_points_y'], p['all_points_x'])
-                mask[rr, cc, i] = 1
-            else:
-                print("None!!!")
+            rr, cc = skimage.draw.line(p['all_points_y'][0], p['all_points_x'][0], p['all_points_y'][1], p['all_points_x'][1])
+            mask[rr, cc, i] = 1
         
 
         # Return mask, and array of class IDs of each instance. Since we have
@@ -196,7 +177,7 @@ class LightsDataset(utils.Dataset):
     def image_reference(self, image_id):
         """Return the path of the image."""
         info = self.image_info[image_id]
-        if info["source"] == "lights":
+        if info["source"] == "pointer":
             return info["path"]
         else:
             super(self.__class__, self).image_reference(image_id)
@@ -205,13 +186,13 @@ class LightsDataset(utils.Dataset):
 def train(model):
     """Train the model."""
     # Training dataset.
-    dataset_train = LightsDataset()
-    dataset_train.load_lights(args.dataset, "train")
+    dataset_train = PointerDataset()
+    dataset_train.load_pointer(args.dataset, "train")
     dataset_train.prepare()
 
     # Validation dataset
-    dataset_val = LightsDataset()
-    dataset_val.load_lights(args.dataset, "val")
+    dataset_val = PointerDataset()
+    dataset_val.load_pointer(args.dataset, "val")
     dataset_val.prepare()
 
     # *** This training schedule is an example. Update to your needs ***
@@ -221,11 +202,11 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=70,
+                epochs=30,
                 layers='heads')
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE/10,
-                epochs=100,
+                epochs=50,
                 layers='all')
 
 
@@ -310,7 +291,7 @@ if __name__ == '__main__':
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN to detect balloons.')
+        description='Train Mask R-CNN to detect pointer.')
     parser.add_argument("command",
                         metavar="<command>",
                         help="'train' or 'splash'")
@@ -345,9 +326,9 @@ if __name__ == '__main__':
 
     # Configurations
     if args.command == "train":
-        config = LightsConfig()
+        config = PointerConfig()
     else:
-        class InferenceConfig(LightsConfig):
+        class InferenceConfig(PointerConfig):
             # Set batch size to 1 since we'll be running inference on
             # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
             GPU_COUNT = 1

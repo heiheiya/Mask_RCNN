@@ -12,6 +12,7 @@ import os
 import sys
 import random
 import math
+import logging
 import numpy as np
 import skimage.io
 import matplotlib
@@ -26,23 +27,24 @@ sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
 import mrcnn.model as modellib
 from mrcnn import visualize
+from mrcnn.model import log
 # Import COCO config
-sys.path.append(os.path.join(ROOT_DIR, "samples/coco/"))  # To find local version
-import coco
+sys.path.append(os.path.join(ROOT_DIR, "samples/pointer/"))  # To find local version
+import pointer
 
 #get_ipython().run_line_magic('matplotlib', 'inline')
 
 # Directory to save logs and trained model
-MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+MODEL_DIR = os.path.join(ROOT_DIR, "pointer_logs")
 
 # Local path to trained weights file
-COCO_MODEL_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+COCO_MODEL_PATH = os.path.join(ROOT_DIR, "pointer_logs/pointer20180830T1728/mask_rcnn_pointer_0049.h5")
 # Download COCO trained weights from Releases if needed
 if not os.path.exists(COCO_MODEL_PATH):
     utils.download_trained_weights(COCO_MODEL_PATH)
 
 # Directory of images to run detection on
-IMAGE_DIR = os.path.join(ROOT_DIR, "images")
+IMAGE_DIR = os.path.join(ROOT_DIR, "/home/share/dataset/pointer/test")
 
 
 # ## Configurations
@@ -54,7 +56,7 @@ IMAGE_DIR = os.path.join(ROOT_DIR, "images")
 # In[2]:
 
 
-class InferenceConfig(coco.CocoConfig):
+class InferenceConfig(pointer.PointerConfig):
     # Set batch size to 1 since we'll be running inference on
     # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
     GPU_COUNT = 1
@@ -101,21 +103,22 @@ model.load_weights(COCO_MODEL_PATH, by_name=True)
 # COCO Class names
 # Index of the class in the list is its ID. For example, to get ID of
 # the teddy bear class, use: class_names.index('teddy bear')
-class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
-               'bus', 'train', 'truck', 'boat', 'traffic light',
-               'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird',
-               'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear',
-               'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie',
-               'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-               'kite', 'baseball bat', 'baseball glove', 'skateboard',
-               'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup',
-               'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-               'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
-               'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed',
-               'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote',
-               'keyboard', 'cell phone', 'microwave', 'oven', 'toaster',
-               'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors',
-               'teddy bear', 'hair drier', 'toothbrush']
+#class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
+#               'bus', 'train', 'truck', 'boat', 'traffic light',
+#               'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird',
+#               'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear',
+#               'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie',
+#               'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+#               'kite', 'baseball bat', 'baseball glove', 'skateboard',
+#               'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup',
+#               'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+#               'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
+#               'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed',
+#               'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote',
+#               'keyboard', 'cell phone', 'microwave', 'oven', 'toaster',
+#               'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors',
+#               'teddy bear', 'hair drier', 'toothbrush']
+class_names = ['BG', 'pointer']
 
 
 # ## Run Object Detection
@@ -125,13 +128,23 @@ class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
 
 # Load a random image from the images folder
 file_names = next(os.walk(IMAGE_DIR))[2]
-image = skimage.io.imread(os.path.join(IMAGE_DIR, random.choice(file_names)))
+for i, p in enumerate(file_names):
+    image = skimage.io.imread(os.path.join(IMAGE_DIR, file_names[i]))
+    #image = skimage.io.imread('/home/share/dataset/light/test/YWJ01-YTFHYX600_Auto201828191753.jpg')
 
-# Run detection
-results = model.detect([image], verbose=1)
+    # Run detection
+    start_time = time.clock()
+    results = model.detect([image], verbose=1)
+    end_time = time.clock()
+    print("time:  ", end_time - start_time)
 
-# Visualize results
-r = results[0]
-visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'], 
+    # Visualize results
+    r = results[0]
+    for i, p in enumerate(r['class_ids']):
+        print(p, class_names[p])
+
+    log("roi ", r['rois'])
+    log("mask ", r['masks'])
+    visualize.display_instances(image, r['rois'], r['masks'], r['class_ids'], 
                             class_names, r['scores'])
 
